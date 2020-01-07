@@ -99,13 +99,16 @@ RUN tar cvzf pi-openssl.tar.gz pi-openssl
 RUN tar cvzf pi-xerces.tar.gz pi-xerces
 RUN tar cvzhf pi-opendds.tar.gz pi-opendds/build/target/ACE_TAO/ACE/lib pi-opendds/build/target/lib
 
-RUN git clone git://git.drogon.net/wiringPi
-RUN cd wiringPi/wiringPi && \
+# wiring Pi is no longer maintained at git.drogon.net
+# use the unofficial github repo with the last official verison
+RUN git clone https://github.com/WiringPi/WiringPi
+RUN cd WiringPi/wiringPi && \
+  git checkout tags/final_official_2.50 && \
   make CC=/opt/cross-pi-gcc/bin/arm-linux-gnueabihf-gcc
 
-RUN cd wiringPi/wiringPi && \
+RUN cd WiringPi/wiringPi && \
   mv libwiringPi.so.2.50 libwiringPi.so
 
-ENV WIRING_PI ${BUILD_ROOT}/wiringPi/wiringPi
+ENV WIRING_PI ${BUILD_ROOT}/WiringPi/wiringPi
 
 CMD ["/bin/bash"]
