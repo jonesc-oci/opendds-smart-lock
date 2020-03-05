@@ -28,11 +28,11 @@ public class DataReaderListenerImpl extends _DataReaderListenerLocalBase {
 
     private static final String LOGTAG = "SmartLock_DataReaderListenerImpl";
 
-    private Context context;
+    private OpenDdsService svc;
 
     public DataReaderListenerImpl(OpenDdsService svc) {
         super();
-        this.context = svc.getApplicationContext();
+        this.svc = svc;
     }
     
     @Override
@@ -103,10 +103,22 @@ public class DataReaderListenerImpl extends _DataReaderListenerLocalBase {
                         + sih.value.instance_state);
             }
 
-            // use local broadcast to communicate between service and UI
-            Intent intent = new Intent(OpenDdsService.LOCK_UPDATE_MESSAGE);
-            intent.putExtra(OpenDdsService.LOCK_STATUS_DATA, lock_status);
-            LocalBroadcastManager.getInstance(context).sendBroadcast(intent);
+            final MainActivity act = svc.getActivity();
+
+            if (act != null) {
+                Handler handler = new Handler(act.getMainLooper());
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Log.i(LOGTAG, "DataReader tryToUpdateLock");
+                        act.tryToUpdateLock(lock_status);
+                    }
+                });
+            }
+            else {
+                Log.i(LOGTAG, "did not update lock state since activity ref is null.");
+            }
+
 
         } else if (status == RETCODE_NO_DATA.value) {
             Log.e(LOGTAG, "ERROR: reader received DDS::RETCODE_NO_DATA!");

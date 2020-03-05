@@ -1,6 +1,7 @@
 package org.opendds.smartlock;
 
 import android.arch.lifecycle.MutableLiveData;
+import android.arch.lifecycle.Observer;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -40,7 +41,7 @@ public class MainActivity extends AppCompatActivity {
 
     final private ReentrantLock locksLock = new ReentrantLock();
 
-    private OpenDdsService dds = null;
+    private OpenDdsService svc = null;
 
     private ServiceConnection ddsServiceConnection = new ServiceConnection() {
         @Override
@@ -49,17 +50,21 @@ public class MainActivity extends AppCompatActivity {
             Log.i(LOG_TAG, "calling onServiceConnected");
 
             OpenDdsService.OpenDdsBinder binder = (OpenDdsService.OpenDdsBinder) service ;
-            dds = binder.getService();
+            svc = binder.getService();
 
-            Log.i(LOG_TAG, "dds = " + dds.toString());
-            Log.i(LOG_TAG, "dw = " + dds.getDataWriter().toString());
+            if (svc == null) {
+                Log.e(LOG_TAG, "onServiceConnected() DDS reference is null");
+            }
+            else {
 
-
-            // update lock models dw refs
-            for (Map.Entry<String, SmartLockFragment> item : locks.entrySet()) {
-                if (dds != null) {
-                    item.getValue().dw = dds.getDataWriter();
+                // update lock models refs to service
+                for (Map.Entry<String, SmartLockFragment> item : locks.entrySet()) {
+                    item.getValue().svc = svc;
                 }
+
+                // update reference
+                svc.setActivity(MainActivity.this);
+
             }
         }
 
@@ -76,12 +81,21 @@ public class MainActivity extends AppCompatActivity {
         container.setId(container_id);
         FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
         SmartLockFragment frag = new SmartLockFragment();
-        if (dds != null) {
-            frag.dw = dds.getDataWriter();
+
+        // it's okay if dds is null here, since service may not be started yet.
+        if (svc != null) {
+            frag.svc = svc;
         }
+
+        Log.i("cj", "frag addlock");
+
         ft.add(container_id, frag, frag.id_string);
         ft.commit();
         list.addView(container);
+
+        Log.i("cj", "frag hidden " + frag.isHidden());
+        Log.i("cj", "frag visible " + frag.isVisible());
+
         return frag;
     }
 
@@ -104,6 +118,7 @@ public class MainActivity extends AppCompatActivity {
         locksLock.lock();
 
         try {
+            Log.i(LOG_TAG, "id = " + status.id + " contains " + locks.containsKey(status.id));
             if (locks.containsKey(status.id)) {
                 frag = locks.get(status.id);
                 frag.setStatus(status);
@@ -115,7 +130,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void tryToUpdateLock (SmartLockStatus status) {
+        Log.i(LOG_TAG, "tryToUpdatelock 1");
         if (locksLock.tryLock()) {
+            Log.i(LOG_TAG, "tryToUpdatelock 2");
             updateLock(status);
         }
     }
@@ -125,29 +142,22 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        if (getResources().getBoolean(R.bool.add_fake_locks)) {
-            addFakeLocks();
-        }
+        if (savedInstanceState == null) {
+Log.i("cj", "saved instance state is null");
+            if (getResources().getBoolean(R.bool.add_fake_locks)) {
+                addFakeLocks();
+            }
 
-        // Set locks that we will show
-        String[] locks = getResources().getStringArray(R.array.locks);
-        for (int i = 0; i < locks.length; i++) {
-            SmartLockStatus status = new SmartLockStatus();
-            status.id = locks[i];
-            status.enabled = false;
-            addLock(status);
+            // Set locks that we will show
+            String[] locks = getResources().getStringArray(R.array.locks);
+            for (int i = 0; i < locks.length; i++) {
+                SmartLockStatus status = new SmartLockStatus();
+                status.id = locks[i];
+                status.enabled = false;
+                addLock(status);
+            }
         }
     }
-
-    private BroadcastReceiver lockUpdateReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            // Get extra data included in the Intent
-            SmartLockStatus status = (SmartLockStatus) intent.getSerializableExtra(OpenDdsService.LOCK_STATUS_DATA);
-
-            tryToUpdateLock(status);
-        }
-    };
 
     @Override
     protected void onStart() {
@@ -160,12 +170,6 @@ public class MainActivity extends AppCompatActivity {
 
             Intent i = new Intent(getApplicationContext(), OpenDdsService.class);
             bindService(i, ddsServiceConnection, Context.BIND_AUTO_CREATE);
-
-            // register for lock status messages
-            // use Android LocalBroadcastManager
-            LocalBroadcastManager.getInstance(this).registerReceiver(lockUpdateReceiver,
-                    new IntentFilter(OpenDdsService.LOCK_UPDATE_MESSAGE));
-
         }
 
         // install network change listener
@@ -206,18 +210,9 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onDestroy() {
-        //Disable GUI
-        //for (Map.Entry<String, SmartLockFragment> item : locks.entrySet()) {
-        //    item.getValue().disable();
-        //    item.getValue().dw = null;
-        //}
-
         Log.i(LOG_TAG, "onDestroy()");
 
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(lockUpdateReceiver);
-
         super.onDestroy();
-
     }
 
     // screen orientation change handling if needed
